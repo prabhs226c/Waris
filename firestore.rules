@@ -1,0 +1,98 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+    
+    // Primitive Helpers
+    function isValidId(id) { 
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
+    }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isSignedIn() { return request.auth != null; }
+    function isAdmin() { 
+      return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)); 
+    }
+
+    // Validation Blueprints
+    function isValidGlobalConfig(data) {
+      return data.keys().hasOnly(['status', 'babyName', 'gender', 'photoDataUrl', 'stats', 'updatedAt']) &&
+             data.status in ['voting', 'announced'] &&
+             (data.keys().hasAll(['babyName']) == false || (data.babyName is string && data.babyName.size() <= 100)) &&
+             (data.keys().hasAll(['gender']) == false || (data.gender in ['boy', 'girl'])) &&
+             (data.keys().hasAll(['photoDataUrl']) == false || (data.photoDataUrl is string && data.photoDataUrl.size() <= 1048576)) &&
+             (data.keys().hasAll(['stats']) == false || (data.stats is string && data.stats.size() <= 500)) &&
+             data.updatedAt == request.time;
+    }
+
+    function isValidBabyNameCreate(data) {
+      return data.keys().hasAll(['name', 'gender', 'submittedBy', 'submitterUid', 'voteCount', 'createdAt']) &&
+             data.keys().size() == 6 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 50 &&
+             data.gender in ['boy', 'girl'] &&
+             data.submittedBy is string && data.submittedBy.size() > 0 && data.submittedBy.size() <= 100 &&
+             data.submitterUid == request.auth.uid &&
+             data.voteCount == 0 &&
+             data.createdAt == request.time;
+    }
+
+    function isValidVoteCreate(data) {
+      return data.keys().hasAll(['uid', 'votedAt']) &&
+             data.keys().size() == 2 &&
+             data.uid == request.auth.uid &&
+             data.votedAt == request.time;
+    }
+
+    // Config Collection
+    match /config/{configId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn() && configId == 'global';
+      allow update: if isValidId(configId) && isAdmin() && isValidGlobalConfig(incoming());
+      allow create: if isValidId(configId) && isAdmin() && isValidGlobalConfig(incoming());
+    }
+
+    // Names Collection
+    match /names/{nameId} {
+      // Allow reading all names for anyone signed in
+      allow read: if isSignedIn();
+      
+      // Allow creating a new name suggestion
+      allow create: if isSignedIn() && isValidId(nameId) && isValidBabyNameCreate(incoming());
+      
+      // Allow voting: only increment voteCount by 1
+      allow update: if isSignedIn() && isValidId(nameId) &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['voteCount']) &&
+                    incoming().voteCount == existing().voteCount + 1 &&
+                    // Ensure the vote document is created atomically
+                    existsAfter(/databases/$(database)/documents/names/$(nameId)/votes/$(request.auth.uid));
+    }
+
+    // Votes Subcollection
+    match /names/{nameId}/votes/{voteId} {
+      // Allow user to check if they voted
+      allow get: if isSignedIn() && voteId == request.auth.uid;
+      // Allow user to create a vote document for themselves
+      allow create: if isSignedIn() && isValidId(nameId) && isValidId(voteId) && voteId == request.auth.uid &&
+                    isValidVoteCreate(incoming()) &&
+                    // Ensure the parent's voteCount is incremented atomically
+                    getAfter(/databases/$(database)/documents/names/$(nameId)).data.voteCount == get(/databases/$(database)/documents/names/$(nameId)).data.voteCount + 1;
+      
+      // We don't allow un-voting or deleting votes to keep it simple, or we can add it later if needed.
+    }
+
+    // Admins Collection
+    match /admins/{adminId} {
+      allow get: if isSignedIn() && adminId == request.auth.uid;
+      // Bootstrapped read/write for self-admin setting or initial setup can be risky. 
+      // Only the genuine admin can read/write their own admin doc if we bootstrap it, or we insert it manually.
+      // We will allow read for the admin.
+      // For bootstrapping, we'll allow an admin document to be created if the email matches the predefined admin.
+      // Wait, request.auth.token.email is available if Google Auth is used.
+      allow create: if isSignedIn() && request.auth.token.email == 'prabhs36@gmail.com' && request.auth.token.email_verified == true && adminId == request.auth.uid && incoming().keys().hasAll(['email']) && incoming().email == 'prabhs36@gmail.com';
+    }
+  }
+}

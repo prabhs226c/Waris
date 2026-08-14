@@ -1,0 +1,116 @@
+{
+  "entities": {
+    "GlobalConfig": {
+      "title": "GlobalConfig",
+      "description": "Global application configuration and announcement status.",
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["voting", "announced"],
+          "description": "Current state of the application"
+        },
+        "babyName": {
+          "type": "string",
+          "description": "The announced baby name",
+          "maxLength": 100
+        },
+        "gender": {
+          "type": "string",
+          "enum": ["boy", "girl"],
+          "description": "The gender of the baby"
+        },
+        "photoDataUrl": {
+          "type": "string",
+          "description": "Base64 encoded photo of the baby",
+          "maxLength": 1048576
+        },
+        "stats": {
+          "type": "string",
+          "description": "Birth stats like weight, length, etc.",
+          "maxLength": 500
+        },
+        "updatedAt": {
+          "type": "number",
+          "description": "Timestamp of last update"
+        }
+      },
+      "required": ["status", "updatedAt"]
+    },
+    "BabyName": {
+      "title": "BabyName",
+      "description": "A suggested baby name.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "maxLength": 50
+        },
+        "gender": {
+          "type": "string",
+          "enum": ["boy", "girl"]
+        },
+        "submittedBy": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "submitterUid": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "voteCount": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "number"
+        }
+      },
+      "required": ["name", "gender", "submittedBy", "submitterUid", "voteCount", "createdAt"]
+    },
+    "Vote": {
+      "title": "Vote",
+      "description": "A user's vote for a baby name.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "votedAt": {
+          "type": "number"
+        }
+      },
+      "required": ["uid", "votedAt"]
+    },
+    "Admin": {
+      "title": "Admin",
+      "description": "An administrator allowed to change the global config.",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "maxLength": 255
+        }
+      },
+      "required": ["email"]
+    }
+  },
+  "firestore": {
+    "/config/{configId}": {
+      "schema": { "$ref": "GlobalConfig" },
+      "description": "Stores the 'global' configuration document"
+    },
+    "/names/{nameId}": {
+      "schema": { "$ref": "BabyName" },
+      "description": "Stores all suggested baby names"
+    },
+    "/names/{nameId}/votes/{voteId}": {
+      "schema": { "$ref": "Vote" },
+      "description": "Stores votes for baby names by users"
+    },
+    "/admins/{adminId}": {
+      "schema": { "$ref": "Admin" },
+      "description": "Stores administrators"
+    }
+  }
+}
